@@ -591,7 +591,7 @@ interface LetterTile {
 
 // ─── ⚠️  FRONTEND TESTING ONLY ───────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-// console.log(GEMINI_API_KEY)
+
 
 // ─── Fisher-Yates shuffle ────────────────────────────────────────────────────
 function shuffle<T>(arr: T[]): T[] {
