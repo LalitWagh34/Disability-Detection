@@ -567,6 +567,8 @@
 //     );
 // }
 
+
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -586,12 +588,11 @@ interface WordChallenge {
 
 interface LetterTile {
     letter: string;
-    uid: string; // stable unique id even for duplicate letters (e.g. BOOK)
+    uid: string;
 }
 
-// ─── ⚠️  FRONTEND TESTING ONLY ───────────────────────────────────────────────
-const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-
+// ─── Groq API Key ─────────────────────────────────────────────────────────────
+const GROQ_API_KEY = process.env.NEXT_PUBLIC_GROQ_API_KEY;
 
 // ─── Fisher-Yates shuffle ────────────────────────────────────────────────────
 function shuffle<T>(arr: T[]): T[] {
@@ -603,7 +604,6 @@ function shuffle<T>(arr: T[]): T[] {
     return a;
 }
 
-// Guarantee the scrambled order is NEVER identical to the original word
 function trulyScramble(letters: string[]): string[] {
     if (letters.length <= 1) return letters;
     let result = shuffle(letters);
@@ -614,7 +614,6 @@ function trulyScramble(letters: string[]): string[] {
     return result;
 }
 
-// Give each tile a unique uid so React keys survive duplicate letters
 function toTiles(letters: string[]): LetterTile[] {
     return letters.map((letter, i) => ({
         letter,
@@ -622,9 +621,27 @@ function toTiles(letters: string[]): LetterTile[] {
     }));
 }
 
-// ─── Gemini fetch ─────────────────────────────────────────────────────────────
-// FIX A: temperature=1.0 + random theme + random seed → different words EVERY time
-async function fetchChallengesFromGemini(
+// ─── Robust JSON extractor ────────────────────────────────────────────────────
+// Handles: raw JSON, ```json ... ```, ``` ... ```, extra text before/after
+function extractJsonArray(raw: string): string {
+    // 1. Strip markdown code fences (```json ... ``` or ``` ... ```)
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) {
+        const inner = fenceMatch[1].trim();
+        const arrMatch = inner.match(/\[[\s\S]*\]/);
+        if (arrMatch) return arrMatch[0];
+    }
+
+    // 2. Try to find a JSON array directly in the text
+    const arrMatch = raw.match(/\[[\s\S]*\]/);
+    if (arrMatch) return arrMatch[0];
+
+    // 3. Fallback
+    return "[]";
+}
+
+// ─── Groq fetch ───────────────────────────────────────────────────────────────
+async function fetchChallengesFromGroq(
     difficulty: "easy" | "medium" | "hard",
     count = 5
 ): Promise<WordChallenge[]> {
@@ -640,46 +657,77 @@ async function fetchChallengesFromGemini(
         "farm", "ocean", "space", "music", "garden", "school",
     ];
     const theme = themes[Math.floor(Math.random() * themes.length)];
-    const seed  = Math.random().toString(36).slice(2, 9); // forces cache-busting
+    const seed  = Math.random().toString(36).slice(2, 9);
 
-    const prompt = `
-Unique session seed (ignore, just ensures a fresh response): ${seed}
-Theme for this round: "${theme}"
+    const prompt = `Unique session seed (ignore): ${seed}
+Theme: "${theme}"
 
 You are making a phonics spelling game for children (ages 5–10) with dyslexia.
 Generate EXACTLY ${count} UNIQUE English words related to "${theme}".
 Difficulty: ${diffMap[difficulty]}.
 
-RULES:
-1. All words UPPERCASE. Every word must be different from each other.
-2. "scrambled" MUST be in a RANDOM order — never the same order as the word.
+STRICT RULES:
+1. All words UPPERCASE. Every word must be DIFFERENT from each other.
+2. "scrambled" MUST be in a DIFFERENT order than the word letters.
    Example: word "CAT" → scrambled ["T","C","A"] NOT ["C","A","T"].
-3. One clear, simple emoji a child instantly recognises.
-4. hint = max 7 words, friendly, fun.
-5. Return ONLY compact valid JSON — no markdown, no code fences, no explanation.
+3. One clear, simple emoji a child instantly recognises for "image".
+4. "hint" = max 7 words, friendly and fun for kids.
+5. Return ONLY a raw JSON array — absolutely no markdown, no code fences, no explanation text before or after.
 
-[{"id":"1","word":"HAT","image":"🎩","hint":"You wear it on your head!","scrambled":["T","H","A"]}]
-`;
+Example output format:
+[{"id":"1","word":"HAT","image":"🎩","hint":"You wear it on your head!","scrambled":["T","H","A"]}]`;
 
-    const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 1.0, topP: 0.97, maxOutputTokens: 1200 },
-            }),
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+            model: "llama-3.3-70b-versatile",
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a helpful assistant. Always respond with raw JSON only — no markdown, no code fences, no extra text.",
+                },
+                { role: "user", content: prompt },
+            ],
+            temperature: 1.0,
+            max_tokens: 1200,
+        }),
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Groq error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    const raw  = data?.choices?.[0]?.message?.content || "[]";
+
+    // ── Robust JSON parse ──────────────────────────────────────────────────────
+    let parsed: WordChallenge[] = [];
+    try {
+        const safeJson = extractJsonArray(raw);
+        parsed = JSON.parse(safeJson);
+
+        // Validate it's actually an array with items
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+            console.warn("⚠️ Groq returned empty or non-array JSON. Raw:", raw);
+            return [];
         }
-    );
-    if (!res.ok) throw new Error(`Gemini error ${res.status}`);
-    const data    = await res.json();
-    const raw     = data?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
-    const cleaned = raw.replace(/```json|```/g, "").trim();
-    const parsed: WordChallenge[] = JSON.parse(cleaned);
+    } catch (err) {
+        console.error("❌ JSON Parse Failed");
+        console.error("RAW response:", raw);
+        return [];
+    }
 
-    // FIX B: always re-scramble client-side so we never show word order
-    return parsed.map(c => ({ ...c, scrambled: trulyScramble(c.word.split("")) }));
+    // Post-process: always re-scramble client-side for guaranteed correctness
+    return parsed.map(c => ({
+        ...c,
+        word: c.word.toUpperCase().trim(),
+        scrambled: trulyScramble(c.word.toUpperCase().trim().split("")),
+    }));
 }
 
 // ─── Confetti ─────────────────────────────────────────────────────────────────
@@ -725,10 +773,8 @@ const CSS = `
   .pg-slide-up   { animation: pgSlideUp .4s ease both; }
   .pg-hint-pop   { animation: pgHintPop .38s cubic-bezier(.34,1.56,.64,1) both; }
 
-  /* Focus ring – bright amber, highly visible */
   :focus-visible { outline: 4px solid #F59E0B; outline-offset: 4px; border-radius: 14px; }
 
-  /* ── Letter tiles ── */
   .pg-tile {
     display: flex; align-items: center; justify-content: center;
     font-family: 'Nunito', sans-serif; font-weight: 900;
@@ -739,7 +785,6 @@ const CSS = `
   }
   .pg-tile:active { transform: scale(.88) translateY(6px) !important; }
 
-  /* Bank tile — white with indigo border */
   .pg-bank {
     background: #ffffff; color: #3730A3;
     border: 3px solid #C7D2FE; border-bottom: 7px solid #6366F1;
@@ -750,7 +795,6 @@ const CSS = `
     box-shadow: 0 16px 30px rgba(99,102,241,.32);
   }
 
-  /* Placed tile — soft indigo fill */
   .pg-placed {
     background: #EEF2FF; color: #312E81;
     border: 3px solid #818CF8; border-bottom: 7px solid #4F46E5;
@@ -758,26 +802,22 @@ const CSS = `
   }
   .pg-placed:not(:disabled):hover { transform: scale(1.07) translateY(-3px); }
 
-  /* Correct */
   .pg-correct {
     background: #DCFCE7; color: #14532D;
     border: 3px solid #4ADE80; border-bottom: 7px solid #16A34A;
     animation: pgBounce .55s ease;
   }
-  /* Wrong */
   .pg-wrong {
     background: #FEE2E2; color: #991B1B;
     border: 3px solid #FCA5A5; border-bottom: 7px solid #DC2626;
     animation: pgWiggle .55s ease;
   }
-  /* Disabled */
   .pg-disabled {
     background: #F3F4F6; color: #9CA3AF;
     border: 3px solid #E5E7EB; border-bottom: 7px solid #D1D5DB;
     cursor: not-allowed; opacity: .65;
   }
 
-  /* ── Drop zone ── */
   .pg-dz {
     display: flex; flex-wrap: wrap; gap: 10px;
     min-height: 108px; padding: 14px 18px;
@@ -790,7 +830,6 @@ const CSS = `
   .pg-dz-correct { background: #F0FDF4; border: 3px solid #4ADE80; box-shadow: 0 0 0 7px rgba(74,222,128,.18); }
   .pg-dz-wrong   { background: #FFF1F2; border: 3px solid #FCA5A5; box-shadow: 0 0 0 7px rgba(252,165,165,.18); animation: pgWiggle .55s ease; }
 
-  /* ── Check button ── */
   .pg-chk {
     width: 100%; padding: 22px 0; border: none; border-radius: 26px;
     font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 22px;
@@ -808,7 +847,6 @@ const CSS = `
   .pg-chk-ok  { background: linear-gradient(135deg,#22C55E,#16A34A); color:#fff; border-bottom:8px solid #15803D; }
   .pg-chk-no  { background: linear-gradient(135deg,#EF4444,#DC2626); color:#fff; border-bottom:8px solid #B91C1C; }
 
-  /* ── Progress ── */
   .pg-prog-track { height: 18px; border-radius: 999px; background: #E0E7FF; overflow: hidden; position: relative; }
   .pg-prog-fill  { height: 100%; border-radius: 999px; background: linear-gradient(90deg,#6366F1,#A855F7); position: relative; overflow: hidden; transition: width .75s cubic-bezier(.34,1.56,.64,1); }
   .pg-prog-fill::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent); animation: pgShimmer 2.2s infinite; }
@@ -819,7 +857,7 @@ export function PhonicsGame() {
     const { addXp, loseHeart } = useAuth();
     const router = useRouter();
 
-    const [difficulty]               = useState<"easy"|"medium"|"hard">("easy");
+    const [difficulty]                    = useState<"easy"|"medium"|"hard">("easy");
     const [challenges, setChallenges]     = useState<WordChallenge[]>([]);
     const [loading, setLoading]           = useState(true);
     const [loadError, setLoadError]       = useState("");
@@ -834,13 +872,18 @@ export function PhonicsGame() {
     // ── Load ──────────────────────────────────────────────────────────────────
     const load = useCallback(() => {
         setLoading(true); setLoadError("");
-        fetchChallengesFromGemini(difficulty)
+        fetchChallengesFromGroq(difficulty)
             .then(data => {
+                if (!data.length) throw new Error("No challenges returned.");
                 setChallenges(data);
                 setBankTiles(toTiles(data[0].scrambled));
                 setPlacedTiles([]); setCurrentStep(0); setLoading(false);
             })
-            .catch(e => { console.error(e); setLoadError("Couldn't load. Check your API key."); setLoading(false); });
+            .catch(e => {
+                console.error(e);
+                setLoadError("Couldn't load challenges. Check your Groq API key.");
+                setLoading(false);
+            });
     }, [difficulty]);
 
     useEffect(() => { load(); }, [load]);
@@ -869,7 +912,6 @@ export function PhonicsGame() {
             setTimeout(() => {
                 const next = currentStep + 1;
                 if (next < challenges.length) {
-                    // FIX B: fresh client-side shuffle for every new word
                     setBankTiles(toTiles(trulyScramble(challenges[next].word.split(""))));
                     setPlacedTiles([]); setCurrentStep(next);
                     setFeedback(null); setWrongCount(0);
@@ -879,7 +921,6 @@ export function PhonicsGame() {
             setFeedback("wrong"); setWrongCount(c=>c+1); loseHeart();
             setTimeout(() => {
                 setFeedback(null);
-                // Re-shuffle on wrong so the layout changes (not the same order again)
                 setBankTiles(toTiles(trulyScramble(challenges[currentStep].word.split(""))));
                 setPlacedTiles([]);
             }, 950);
@@ -890,19 +931,16 @@ export function PhonicsGame() {
     const canCheck   = !!challenge && placedTiles.length === challenge?.word.length && !feedback;
     const progress   = challenges.length ? (currentStep / challenges.length) * 100 : 0;
 
-    // Tile class helper
     const tileStateClass = (state: "bank"|"placed") =>
         feedback === "correct" ? "pg-tile pg-correct" :
         feedback === "wrong"   ? "pg-tile pg-wrong"   :
         state === "bank"       ? "pg-tile pg-bank"     : "pg-tile pg-placed";
 
-    // Drop-zone class
     const dzClass =
         feedback === "correct"   ? "pg-dz pg-dz-correct" :
         feedback === "wrong"     ? "pg-dz pg-dz-wrong"   :
         placedTiles.length > 0   ? "pg-dz pg-dz-filled"  : "pg-dz pg-dz-empty";
 
-    // Check-btn class
     const chkClass =
         feedback === "correct" ? "pg-chk pg-chk-ok" :
         feedback === "wrong"   ? "pg-chk pg-chk-no" :
@@ -921,7 +959,7 @@ export function PhonicsGame() {
                     <div style={{ position:"absolute", inset:0, background:"linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent)", animation:"pgShimmer 1.8s infinite" }} />
                 </div>
             </div>
-            <p style={{ fontSize:15, color:"#818CF8", fontFamily:"Atkinson Hyperlegible,sans-serif" }}>Powered by Gemini ✨</p>
+            <p style={{ fontSize:15, color:"#818CF8", fontFamily:"Atkinson Hyperlegible,sans-serif" }}>Powered by Groq ⚡</p>
         </div>
     );
 
@@ -1072,10 +1110,7 @@ export function PhonicsGame() {
                         )}
                     </AnimatePresence>
 
-                    {/* ── Letter bank ──────────────────────────────────────────────────────
-                        FIX C: tiles are scattered with staggered marginTop values so they
-                        NEVER appear in a straight horizontal line.
-                        The trulyScramble() ensures order is never the word itself.        */}
+                    {/* ── Letter bank ── */}
                     <div
                         style={{
                             display:"flex", flexWrap:"wrap", gap:14,
@@ -1086,7 +1121,6 @@ export function PhonicsGame() {
                     >
                         <AnimatePresence>
                             {bankTiles.map((tile, i) => {
-                                // Varying vertical offsets so tiles form a wave, not a line
                                 const vertOffsets = [0, 14, 28, 10, 22, 6, 18, 32, 4, 20];
                                 const mt = vertOffsets[i % vertOffsets.length];
                                 return (
