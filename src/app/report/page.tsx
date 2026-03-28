@@ -302,7 +302,7 @@ function ReportContent() {
     const dateStr = now.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
 
     return (
-        <main className="min-h-screen bg-gray-100 py-10 px-4 print:bg-white print:py-0">
+        <main className="min-h-screen bg-slate-950 py-10 px-4 print:bg-white print:py-0">
             <div className="max-w-3xl mx-auto space-y-8">
 
                 {/* ── Top Actions ── */}
@@ -327,7 +327,7 @@ function ReportContent() {
 
                     <div className="p-6 space-y-6">
                         {/* Participant info table */}
-                        <table className="w-full border border-gray-200 text-sm">
+                        <table className="w-full border text-gray-950 border-gray-200 text-sm">
                             <tbody>
                                 {[
                                     ['Participant Name', user?.name ?? '—'],
