@@ -195,7 +195,6 @@
 //     );
 // }
 
-
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -204,6 +203,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "@/db/db";
 import { predictDyscalculia, DyscalculiaSignals } from "@/services/AiDiagnosis";
+import emailjs from "@emailjs/browser";
+
+// ─── EmailJS Config ────────────────────────────────────────────────────────
+const EMAILJS_SERVICE_ID  = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY  = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY;
+// ──────────────────────────────────────────────────────────────────────────
 
 interface Question {
     id: string;
@@ -215,7 +221,6 @@ interface Question {
     difficulty: "easy" | "medium" | "hard";
 }
 
-// Expanded 40-question bank across all difficulty levels
 const QUESTION_BANK: Question[] = [
     // ── Arithmetic ────────────────────────────────────────────────────────────
     { id:"a1",  type:"choice", category:"arithmetic",   difficulty:"easy",   question:"What is 5 + 3?",                  options:["7","8","9","6"],                     correctAnswer:"8" },
@@ -280,14 +285,14 @@ export function DyscalculiaTest({ onComplete }: { onComplete?: () => void }) {
     const router = useRouter();
     const { user } = useAuth();
 
-    const [questions, setQuestions]   = useState<Question[]>([]);
+    const [questions, setQuestions]     = useState<Question[]>([]);
     const [currentStep, setCurrentStep] = useState(0);
-    const [answers, setAnswers]       = useState<Record<string, string>>({});
-    const [isFinished, setIsFinished] = useState(false);
+    const [answers, setAnswers]         = useState<Record<string, string>>({});
+    const [isFinished, setIsFinished]   = useState(false);
+    const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
-    // Tracking signals
-    const [questionTimes, setQuestionTimes]   = useState<Record<string, number>>({});
-    const [answerChanges, setAnswerChanges]   = useState<Record<string, number>>({});
+    const [questionTimes, setQuestionTimes] = useState<Record<string, number>>({});
+    const [answerChanges, setAnswerChanges] = useState<Record<string, number>>({});
     const questionStartRef = useRef<number>(Date.now());
 
     useEffect(() => {
@@ -317,47 +322,127 @@ export function DyscalculiaTest({ onComplete }: { onComplete?: () => void }) {
         if (currentStep < questions.length - 1) setCurrentStep(p => p + 1);
         else finishAssessment();
     };
+
     const handleBack = () => { if (currentStep > 0) setCurrentStep(p => p - 1); };
+
+    // ── Send result email automatically on completion ──────────────────────
+    const sendResultEmail = async (score: number, risk: string) => {
+        if (!user?.email) return; // no email on account, skip silently
+
+        setEmailStatus("sending");
+        try {
+            await emailjs.send(
+                EMAILJS_SERVICE_ID,
+                EMAILJS_TEMPLATE_ID,
+                {
+                    user_name:          user.name,
+                    user_email:         user.email,          // sends TO the logged-in user
+                    from_email:         "akshayrathod000001@gmail.com",
+                    disorders_screened: "Dyscalculia",
+                    result_summary:     `• Dyscalculia → Risk: ${risk}  |  Score: ${score} / ${questions.length}`,
+                    overall_risk:       risk,
+                    recommendations:    risk === "High"
+                                            ? "We strongly recommend consulting an educational specialist for a detailed evaluation."
+                                            : risk === "Moderate"
+                                            ? "Consider speaking with a teacher or specialist to monitor progress."
+                                            : "No significant concerns detected. Keep practising!",
+                    date: new Date().toLocaleDateString("en-IN", {
+                        day: "numeric", month: "long", year: "numeric"
+                    }),
+                },
+                EMAILJS_PUBLIC_KEY
+            );
+            setEmailStatus("sent");
+            console.log("✅ Result email sent to:", user.email);
+        } catch (err) {
+            setEmailStatus("failed");
+            console.error("❌ EmailJS failed:", err);
+        }
+    };
 
     const finishAssessment = async () => {
         setIsFinished(true);
 
         const correctAnswers: Record<string, string> = {};
         const categories: Record<string, "arithmetic" | "sequence" | "word_problem" | "estimation"> = {};
-        questions.forEach(q => { correctAnswers[q.id] = q.correctAnswer; categories[q.id] = q.category; });
+        questions.forEach(q => {
+            correctAnswers[q.id] = q.correctAnswer;
+            categories[q.id]    = q.category;
+        });
 
-        const signals: DyscalculiaSignals = { answers, correctAnswers, categories, questionTimes, answerChanges, totalQuestions: questions.length };
+        const signals: DyscalculiaSignals = {
+            answers, correctAnswers, categories,
+            questionTimes, answerChanges,
+            totalQuestions: questions.length,
+        };
         const result = predictDyscalculia(signals);
 
         let score = 0;
-        questions.forEach(q => { if ((answers[q.id]||"").toLowerCase().trim() === q.correctAnswer.toLowerCase().trim()) score++; });
+        questions.forEach(q => {
+            if ((answers[q.id] || "").toLowerCase().trim() === q.correctAnswer.toLowerCase().trim()) score++;
+        });
 
         if (user) {
             await db.assessments.add({
-                userId: user.id, type: "dyscalculia", score, total: questions.length,
-                risk: result.risk as any,
-                details: { answers, questionTimes, answerChanges, categoryScores: result.categoryScores, riskScore: result.score, breakdown: result.breakdown, flags: result.flags, aiProbability: result.probability },
+                userId:  user.id,
+                type:    "dyscalculia",
+                score,
+                total:   questions.length,
+                risk:    result.risk as any,
+                details: {
+                    answers, questionTimes, answerChanges,
+                    categoryScores: result.categoryScores,
+                    riskScore:      result.score,
+                    breakdown:      result.breakdown,
+                    flags:          result.flags,
+                    aiProbability:  result.probability,
+                },
                 date: new Date().toISOString(),
             });
         }
 
-        setTimeout(() => { onComplete ? onComplete() : router.push("/report"); }, 1500);
+        // ✅ Send email automatically — fire and forget (non-blocking)
+        sendResultEmail(score, result.risk);
+
+        setTimeout(() => {
+            onComplete ? onComplete() : router.push("/report");
+        }, 1500);
     };
 
+    // ── Loading state ──────────────────────────────────────────────────────
     if (questions.length === 0) return (
         <div className="flex items-center justify-center min-h-[50vh]">
             <div className="w-10 h-10 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
         </div>
     );
 
+    // ── Finished state ─────────────────────────────────────────────────────
     if (isFinished) return (
-        <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center">
-            <h2 className="text-3xl font-bold mb-4 text-slate-800 dark:text-white">Assessment Complete! ✓</h2>
-            <div className="w-12 h-12 border-4 border-violet-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center gap-4">
+            <h2 className="text-3xl font-bold text-slate-800 dark:text-white">Assessment Complete! ✓</h2>
+            <div className="w-12 h-12 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
             <p className="text-lg text-slate-600 dark:text-slate-300">Finalizing your profile…</p>
+
+            {/* ── Email status feedback ── */}
+            {emailStatus === "sending" && (
+                <p className="text-sm text-slate-400 animate-pulse">
+                    📧 Sending result to {user?.email}…
+                </p>
+            )}
+            {emailStatus === "sent" && (
+                <p className="text-sm text-green-500 bg-green-500/10 px-4 py-2 rounded-lg border border-green-500/20">
+                    ✅ Result emailed to <strong>{user?.email}</strong>
+                </p>
+            )}
+            {emailStatus === "failed" && (
+                <p className="text-sm text-red-400 bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20">
+                    ⚠️ Could not send email. Check EmailJS config.
+                </p>
+            )}
         </div>
     );
 
+    // ── Question UI ────────────────────────────────────────────────────────
     const q = questions[currentStep];
     const currentAnswer = answers[q.id] || "";
 
@@ -383,7 +468,7 @@ export function DyscalculiaTest({ onComplete }: { onComplete?: () => void }) {
             <div className="flex flex-col gap-6">
                 <div className="flex items-center justify-between">
                     <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full border ${catColors[q.category]}`}>
-                        {q.category.replace("_"," ")}
+                        {q.category.replace("_", " ")}
                     </span>
                     <span className={`text-xs font-medium ${difficultyColor[q.difficulty]}`}>
                         {difficultyLabel[q.difficulty]}
@@ -393,21 +478,28 @@ export function DyscalculiaTest({ onComplete }: { onComplete?: () => void }) {
                 {/* Category progress bars */}
                 <div className="flex gap-1">
                     {(["arithmetic","sequence","word_problem","estimation"] as const).map(cat => {
-                        const catQs = questions.filter(q => q.category === cat);
+                        const catQs   = questions.filter(q => q.category === cat);
                         const answered = catQs.filter(q => answers[q.id]).length;
-                        const labels: Record<string,string> = { arithmetic:"Arith", sequence:"Seq", word_problem:"Word", estimation:"Est" };
+                        const labels: Record<string, string> = {
+                            arithmetic: "Arith", sequence: "Seq", word_problem: "Word", estimation: "Est"
+                        };
                         return (
                             <div key={cat} className="flex-1">
                                 <div className="text-xs text-slate-400 mb-1 text-center">{labels[cat]}</div>
                                 <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                    <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${(answered/catQs.length)*100}%` }} />
+                                    <div
+                                        className="h-full bg-violet-500 rounded-full transition-all"
+                                        style={{ width: `${(answered / catQs.length) * 100}%` }}
+                                    />
                                 </div>
                             </div>
                         );
                     })}
                 </div>
 
-                <h3 className="text-xl font-medium text-slate-800 dark:text-white leading-relaxed">{q.question}</h3>
+                <h3 className="text-xl font-medium text-slate-800 dark:text-white leading-relaxed">
+                    {q.question}
+                </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {q.options.map((option, idx) => (
@@ -429,7 +521,9 @@ export function DyscalculiaTest({ onComplete }: { onComplete?: () => void }) {
                 </div>
 
                 {(answerChanges[q.id] || 0) > 0 && (
-                    <p className="text-xs text-amber-500">Answer changed {answerChanges[q.id]} time(s) — take your time!</p>
+                    <p className="text-xs text-amber-500">
+                        Answer changed {answerChanges[q.id]} time(s) — take your time!
+                    </p>
                 )}
             </div>
         </AssessmentShell>
