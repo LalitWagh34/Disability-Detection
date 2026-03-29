@@ -231,8 +231,6 @@
 //     );
 // }
 
-
-
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -243,13 +241,19 @@ interface VoiceInputProps {
 }
 
 export function VoiceInput({ onTranscriptChange, placeholder = "Speak now..." }: VoiceInputProps) {
-    const [isListening, setIsListening]       = useState(false);
-    const [interimText, setInterimText]       = useState(""); // live "in progress" text
-    const [transcript, setTranscript]         = useState("");
-    const [isSupported, setIsSupported]       = useState(true);
-    const [error, setError]                   = useState("");
-    const recognitionRef                      = useRef<any>(null);
-    const manualStopRef                       = useRef(false); // tracks if WE stopped it
+    const [isListening, setIsListening]   = useState(false);
+    const [interimText, setInterimText]   = useState("");
+    const [transcript, setTranscript]     = useState("");
+    const [isSupported, setIsSupported]   = useState(true);
+    const [error, setError]               = useState("");
+    const recognitionRef                  = useRef<any>(null);
+    const manualStopRef                   = useRef(false);
+    const transcriptRef                   = useRef(""); // ✅ always holds latest transcript value
+
+    // Keep ref in sync with state
+    useEffect(() => {
+        transcriptRef.current = transcript;
+    }, [transcript]);
 
     useEffect(() => {
         if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
@@ -272,10 +276,9 @@ export function VoiceInput({ onTranscriptChange, placeholder = "Speak now..." }:
         const recognition = new SpeechRecognition();
         recognitionRef.current = recognition;
 
-        // continuous=true gives more time, interimResults shows live feedback
-        recognition.continuous     = true;
-        recognition.interimResults = true;
-        recognition.lang           = "en-US";
+        recognition.continuous      = true;
+        recognition.interimResults  = true;
+        recognition.lang            = "en-US";
         recognition.maxAlternatives = 1;
 
         recognition.onstart = () => {
@@ -295,30 +298,31 @@ export function VoiceInput({ onTranscriptChange, placeholder = "Speak now..." }:
                 }
             }
 
-            // Show live interim feedback
             if (interim) setInterimText(interim);
 
-            // Accumulate — do NOT stop after first sentence, user may be reading a full passage
             if (newFinal) {
-                setTranscript(prev => {
-                    const accumulated = prev ? prev.trim() + " " + newFinal.trim() : newFinal.trim();
-                    onTranscriptChange(accumulated);
-                    return accumulated;
-                });
+                // ✅ FIX: compute accumulated value using ref (always fresh),
+                //    then call both setters outside any setState callback
+                const accumulated = transcriptRef.current.trim()
+                    ? transcriptRef.current.trim() + " " + newFinal.trim()
+                    : newFinal.trim();
+
+                setTranscript(accumulated);       // ✅ simple assignment, no updater callback
+                onTranscriptChange(accumulated);  // ✅ called outside setState — no more React error
                 setInterimText("");
             }
         };
 
         recognition.onerror = (event: any) => {
             if (event.error === "aborted") return;
-            if (manualStopRef.current) return; // we stopped it, ignore
+            if (manualStopRef.current) return;
 
             const msgs: Record<string, string> = {
-                "no-speech":          "No speech detected — speak a little louder or closer to the mic.",
-                "audio-capture":      "Microphone not found. Check your device settings.",
-                "not-allowed":        "Microphone access denied. Click the 🔒 icon in your browser and allow mic.",
-                "network":            "Network error. Check your connection.",
-                "service-not-allowed":"Speech service blocked. Please use Chrome.",
+                "no-speech":           "No speech detected — speak a little louder or closer to the mic.",
+                "audio-capture":       "Microphone not found. Check your device settings.",
+                "not-allowed":         "Microphone access denied. Click the 🔒 icon in your browser and allow mic.",
+                "network":             "Network error. Check your connection.",
+                "service-not-allowed": "Speech service blocked. Please use Chrome.",
             };
             setError(msgs[event.error] ?? `Speech error: ${event.error}`);
             setIsListening(false);
@@ -348,6 +352,7 @@ export function VoiceInput({ onTranscriptChange, placeholder = "Speak now..." }:
     const reset = () => {
         stopListening();
         setTranscript("");
+        transcriptRef.current = "";
         setError("");
         setInterimText("");
         onTranscriptChange("");
@@ -433,7 +438,7 @@ export function VoiceInput({ onTranscriptChange, placeholder = "Speak now..." }:
                 ))}
             </div>
 
-            {/* ── Live interim text — KEY: shows user it IS hearing them ── */}
+            {/* ── Live interim text ── */}
             {interimText && (
                 <div className="w-full px-4 py-3 bg-slate-700/50 rounded-xl border border-slate-600 border-dashed">
                     <p className="text-slate-400 text-sm italic animate-pulse">

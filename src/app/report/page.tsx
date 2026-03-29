@@ -308,7 +308,10 @@ function ReportContent() {
                 {/* ── Top Actions ── */}
                 <div className="flex justify-between items-center print:hidden">
                     <Link href="/dashboard" className="text-sm text-violet-600 hover:underline">← Back to Dashboard</Link>
-                    <DownloadReportButton data={results} userName={user?.name ?? 'Student'} />
+                    <DownloadReportButton 
+    data={results} 
+    isTestCompleted={!noResults}  // true when at least one test is done
+/>
                 </div>
 
                 {/* ── COVER PAGE ── */}
