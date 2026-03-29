@@ -190,6 +190,9 @@ cp .env.example .env.local
 Edit `.env.local`:
 ```env
 NEXT_PUBLIC_GROQ_API_KEY=your_groq_api_key_here
+NEXT_PUBLIC_EMAILJS_SERVICE_ID=Your service id 
+NEXT_PUBLIC_EMAILJS_TEMPLATE_ID= your templete key 
+NEXT_PUBLIC_EMAILJS_PUBLIC_KEY= your public key 
 ```
 
 ```bash
@@ -206,6 +209,9 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_GROQ_API_KEY` | ✅ Yes | Groq API key for Owly AI tutor |
+| `NEXT_PUBLIC_EMAILJS_SERVICE_ID` | ✅ Yes | Your service id |
+| `NEXT_PUBLIC_EMAILJS_TEMPLATE_ID` | ✅ Yes | your templete key |
+|`NEXT_PUBLIC_EMAILJS_PUBLIC_KEY` | ✅ Yes | your public key |
 
 > **Note:** No backend or database server required. All user data is stored locally in the browser via IndexedDB (Dexie). The app works fully offline after the initial load except for the AI chat feature.
 
