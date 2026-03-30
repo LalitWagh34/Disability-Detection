@@ -1047,7 +1047,7 @@ export default function Home() {
         <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
           <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-violet-400/20 mix-blend-multiply filter blur-[100px] animate-blob" />
           <div className="absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full bg-teal-300/20 mix-blend-multiply filter blur-[100px] animate-blob" style={{ animationDelay: "2s" }} />
-          <div className="absolute bottom-[-20%] left-[20%] w-[40vw] h-[40vw] rounded-full bg-orange-300/20 mix-blend-multiply filter blur-[100px] animate-blob" style={{ animationDelay: "4s" }} />
+          <div className="absolute bottom-[-20%] left-[20%] w-[40vw] h-[40vw] rounded-full bg-orange-200/20 mix-blend-multiply filter blur-[100px] animate-blob" style={{ animationDelay: "4s" }} />
         </div>
 
         <div className="max-w-7xl mx-auto relative z-10 w-full">
