@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from '@/context/AuthContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { AiChatWidget } from '@/components/ui/AiChatWidget';
+import BreathtakingBackground from '@/components/ui/BreathtakingBackground'; // Import it here
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,7 +27,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ThemeProvider>
           <AuthProvider>
-            {children}
+            {/* Global Background Layer */}
+            <BreathtakingBackground />
+
+            {/* Main Content Layer */}
+            <div className="relative z-10 min-h-screen">
+              {children}
+            </div>
+
             <AiChatWidget />
           </AuthProvider>
         </ThemeProvider>
