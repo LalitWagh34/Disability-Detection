@@ -178,13 +178,13 @@ function AssessmentSection({ title, assessment, getAnalytics, accentColor, emoji
     return (
         <section className="bg-white rounded-2xl shadow-lg overflow-hidden mb-8 print:break-inside-avoid">
             {/* Header bar */}
-            <div className="text-white text-center py-3 font-bold tracking-widest text-sm uppercase" style={{ backgroundColor: accentColor }}>
+            <div className="text-black text-center py-3 font-bold tracking-widest text-sm uppercase" style={{ backgroundColor: accentColor }}>
                 {emoji} {title}
             </div>
-            <div className="grid grid-cols-3 text-sm border-b border-gray-200 divide-x divide-gray-200 text-center py-3 px-4">
-                <div>Risk Level: <RiskBadge risk={assessment.risk} /></div>
-                <div>Score: <strong>{assessment.score} / {assessment.total}</strong></div>
-                <div>AI Confidence: <strong>{aiConfidence}%</strong></div>
+            <div className="grid grid-cols-3 text-sm border-b border-gray-950 divide-x divide-gray-200 text-center py-3 px-4">
+                <div className='text-gray-950  font-bold  '>Risk Level: <RiskBadge  risk={assessment.risk} /></div>
+                <div className='text-gray-950  font-bold  ' >Score: <strong>{assessment.score} / {assessment.total}</strong></div>
+                <div className='text-gray-950  font-bold  ' >AI Confidence: <strong>{aiConfidence}%</strong></div>
             </div>
 
             <div className="p-6 space-y-6">
