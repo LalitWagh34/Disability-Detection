@@ -8,8 +8,9 @@ export default function BreathtakingBackground() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
-
   if (!mounted) return null;
+
+  const isDark = theme === 'dark';
 
   return (
     <>
@@ -19,23 +20,25 @@ export default function BreathtakingBackground() {
           33% { transform: translate(30px, -50px) scale(1.1); }
           66% { transform: translate(-20px, 20px) scale(0.9); }
         }
-        .animate-blob {
-          animation: blob 10s infinite alternate cubic-bezier(0.45, 0, 0.55, 1);
-        }
+        .animate-blob { animation: blob 10s infinite alternate ease-in-out; }
       `}</style>
 
-      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden transition-colors duration-700 bg-[#fafcff] dark:bg-[#06080f]">
-        {/* Violet Orb */}
-        <div className="absolute top-[-10%] right-[-10%] w-[70vw] h-[70vw] rounded-full bg-violet-400/10 dark:bg-violet-600/15 blur-[120px] animate-blob" />
+      <div className={`fixed inset-0 z-0 pointer-events-none overflow-hidden transition-colors duration-1000 
+        ${isDark ? 'bg-[#06080f]' : 'bg-[#fcfaff]'}`}> {/* 💡 Tinted Pearl base - MUCH easier on eyes */}
         
-        {/* Orange Orb */}
-        <div className="absolute bottom-[-10%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-orange-400/10 dark:bg-orange-600/10 blur-[100px] animate-blob" style={{ animationDelay: '2s' }} />
+        {/* Soft Violet Orb */}
+        <div className={`absolute top-[-10%] right-[-10%] w-[70vw] h-[70vw] rounded-full blur-[120px] animate-blob transition-all duration-1000
+          ${isDark ? 'bg-violet-600/15' : 'bg-violet-200/30'}`} />
         
-        {/* Teal Orb (Optional for extra depth) */}
-        <div className="absolute top-[20%] left-[20%] w-[40vw] h-[40vw] rounded-full bg-teal-300/5 dark:bg-teal-500/5 blur-[100px] animate-blob" style={{ animationDelay: '4s' }} />
+        {/* Warm Peach Orb (Adds "warmth" to reduce eye strain) */}
+        <div className={`absolute bottom-[-10%] left-[-10%] w-[60vw] h-[60vw] rounded-full blur-[100px] animate-blob transition-all duration-1000
+          ${isDark ? 'bg-orange-600/10' : 'bg-orange-100/40'}`} style={{ animationDelay: '2s' }} />
         
-        {/* Subtle Texture Layer */}
-        <div className="absolute inset-0 opacity-[0.015] dark:opacity-[0.03] pointer-events-none" 
+        {/* Soft Teal/Mint Orb */}
+        <div className={`absolute top-[20%] left-[20%] w-[40vw] h-[40vw] rounded-full blur-[100px] animate-blob transition-all duration-1000
+          ${isDark ? 'bg-teal-500/5' : 'bg-emerald-100/20'}`} style={{ animationDelay: '4s' }} />
+        
+        <div className="absolute inset-0 opacity-[0.02] pointer-events-none" 
              style={{ backgroundImage: `url('https://www.transparenttextures.com/patterns/cubes.png')` }} />
       </div>
     </>
