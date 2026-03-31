@@ -1006,7 +1006,7 @@ export default function Home() {
 
           {/* Nav links */}
           <div className="hidden md:flex items-center gap-10">
-            {[["/how-it-works", t.nav.how], ["/#disabilities", t.nav.features], ["/#testimonials", t.nav.stories]].map(([href, label]) => (
+            {[["/how-it-works", t.nav.how], ["/disabilities", t.nav.features], ["/#testimonials", t.nav.stories]].map(([href, label]) => (
               <Link key={href} href={href} className="text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors">
                 {label}
               </Link>
@@ -1086,6 +1086,9 @@ export default function Home() {
                   <span className="relative flex items-center gap-2">🚀 {t.startBtn}</span>
                 </Link>
                 <Link href="/how-it-works" className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl text-base font-bold text-slate-700 bg-white border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-slate-300 transition-all duration-300">
+                    {t.howBtn} <span className="text-slate-400 group-hover:translate-x-1 transition-transform">→</span>
+                </Link>
+                <Link href="/disabilities" className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-2xl text-base font-bold text-slate-700 bg-white border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-slate-300 transition-all duration-300">
                     {t.howBtn} <span className="text-slate-400 group-hover:translate-x-1 transition-transform">→</span>
                 </Link>
               </div>
