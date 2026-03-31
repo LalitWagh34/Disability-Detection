@@ -987,7 +987,7 @@ export function PhonicsGame() {
                 {wrongCount === 0 ? "🏆 Perfect round! Zero mistakes!" : "👏 Great effort — keep practising!"}
             </div>
             <button
-                onClick={() => router.push("/dashboard")}
+                onClick={() => router.push("/practice")}
                 style={{ background:"#fff", color:"#4F46E5", fontFamily:"Nunito,sans-serif", fontWeight:900, fontSize:22, padding:"18px 56px", borderRadius:999, border:"none", cursor:"pointer", boxShadow:"0 8px 0 rgba(0,0,0,.18)", transition:"transform .13s" }}
                 onMouseEnter={e=>e.currentTarget.style.transform="scale(1.05)"}
                 onMouseLeave={e=>e.currentTarget.style.transform=""}
